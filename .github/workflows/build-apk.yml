@@ -13,11 +13,6 @@ on:
         type: choice
         options: [debug, release]
         default: debug
-      platform:
-        description: 'Platform'
-        type: choice
-        options: [android, ios, both]
-        default: android
 
 concurrency:
   group: build-${{ github.ref }}
@@ -25,108 +20,45 @@ concurrency:
 
 jobs:
   build-android:
-    name: Build Android APK
+    name: Build Android ${{ inputs.build-type || 'debug' }}
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'android' || inputs.platform == 'both' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: android-actions/setup-android@v3
         with:
           packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
 
-      - name: Generate native Android project
-        run: npx expo prebuild --platform android --no-install
-
-      - name: Make Gradle executable
-        run: chmod +x android/gradlew
-
+      # Debug: local Gradle (no JS bundled — needs Metro at runtime)
       - name: Build debug APK
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build-type == 'debug' }}
+        if: ${{ inputs.build-type == 'debug' || github.event_name == 'push' }}
         run: |
-          cd android
-          ./gradlew assembleDebug
+          npx expo prebuild --platform android --no-install
+          cd android && chmod +x gradlew && ./gradlew assembleDebug
 
-      - name: Setup signing for release
+      # Release: EAS Cloud (handles Expo SDK 57 JS bundling correctly)
+      - uses: expo/expo-github-action@v8
+        if: ${{ inputs.build-type == 'release' }}
+        with: { eas-version: latest, token: '${{ secrets.EXPO_TOKEN }}' }
+
+      - name: EAS release build
         if: ${{ inputs.build-type == 'release' }}
         run: |
-          echo "$ANDROID_KEYSTORE" | base64 -d > android/app/phoneide-release.keystore
-          # Write signing config for Gradle
-          cat >> android/gradle.properties << 'GRADLEPROPS'
-          MYAPP_UPLOAD_STORE_FILE=phoneide-release.keystore
-          MYAPP_UPLOAD_STORE_PASSWORD=${ANDROID_STORE_PASSWORD}
-          MYAPP_UPLOAD_KEY_ALIAS=${ANDROID_KEY_ALIAS}
-          MYAPP_UPLOAD_KEY_PASSWORD=${ANDROID_KEY_PASSWORD}
-          GRADLEPROPS
-        env:
-          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
-          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          eas build --platform android --profile production --non-interactive --wait
+          mkdir -p artifacts
+          find . -name "*.apk" -o -name "*.aab" | head -5 | xargs -I{} cp {} artifacts/ 2>/dev/null || true
 
-      - name: Build release APK
-        if: ${{ inputs.build-type == 'release' }}
-        run: |
-          cd android
-          NODE_OPTIONS="--no-experimental-strip-types" ./gradlew assembleRelease
-
-      - name: Upload APK artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: phone-ide-android-${{ inputs.build-type || 'debug' }}
           path: |
             android/app/build/outputs/apk/**/*.apk
+            artifacts/*.apk
+            artifacts/*.aab
           retention-days: 30
-
-  build-ios:
-    name: Build iOS (macOS only)
-    runs-on: macos-latest
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'ios' || inputs.platform == 'both') }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate native iOS project
-        run: npx expo prebuild --platform ios --no-install
-
-      - name: Install CocoaPods
-        run: |
-          cd ios
-          pod install
-
-      - name: Build iOS (simulator)
-        run: |
-          cd ios
-          xcodebuild -workspace phoneidemobile.xcworkspace \
-            -scheme phoneidemobile \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
-            build CODE_SIGNING_ALLOWED=NO
-        continue-on-error: true
