@@ -40,6 +40,12 @@
         "resourceClass": "m1-medium"
       },
       "channel": "production"
+    },
+    "apk": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {

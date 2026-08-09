@@ -49,7 +49,7 @@ jobs:
 
       - name: Submit to EAS
         if: ${{ inputs.build-type == 'release' }}
-        run: eas build --platform android --profile production --non-interactive --no-wait
+        run: eas build --platform android --profile preview --non-interactive --no-wait
 
       - name: Upload debug APK
         if: ${{ inputs.build-type == 'debug' }}
