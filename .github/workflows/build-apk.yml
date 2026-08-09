@@ -64,16 +64,28 @@ jobs:
           cd android
           ./gradlew assembleDebug
 
+      - name: Setup signing for release
+        if: ${{ inputs.build-type == 'release' }}
+        run: |
+          echo "$ANDROID_KEYSTORE" | base64 -d > android/app/phoneide-release.keystore
+          # Write signing config for Gradle
+          cat >> android/gradle.properties << 'GRADLEPROPS'
+          MYAPP_UPLOAD_STORE_FILE=phoneide-release.keystore
+          MYAPP_UPLOAD_STORE_PASSWORD=${ANDROID_STORE_PASSWORD}
+          MYAPP_UPLOAD_KEY_ALIAS=${ANDROID_KEY_ALIAS}
+          MYAPP_UPLOAD_KEY_PASSWORD=${ANDROID_KEY_PASSWORD}
+          GRADLEPROPS
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
       - name: Build release APK
         if: ${{ inputs.build-type == 'release' }}
         run: |
           cd android
           ./gradlew assembleRelease
-        env:
-          ANDROID_SIGNING_KEY: ${{ secrets.ANDROID_KEYSTORE }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
