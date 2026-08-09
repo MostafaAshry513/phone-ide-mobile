@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Phone IDE",
+    "slug": "phone-ide-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "phoneide",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#080b16",
+    "primaryColor": "#7c5cfc",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "dev.phoneide.app",
+      "infoPlist": {
+        "UIViewControllerBasedStatusBarAppearance": false
+      }
+    },
+    "android": {
+      "package": "dev.phoneide.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#080b16",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "pan",
+      "allowBackup": true
+    },
+    "plugins": [
+      "expo-font",
+      "expo-document-picker",
+      "expo-file-system",
+      "expo-clipboard",
+      "expo-haptics",
+      "expo-sharing",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#080b16",
+          "image": "./assets/splash-icon.png",
+          "dark": {
+            "backgroundColor": "#080b16"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
