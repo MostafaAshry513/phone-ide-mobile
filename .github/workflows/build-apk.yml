@@ -85,7 +85,7 @@ jobs:
         if: ${{ inputs.build-type == 'release' }}
         run: |
           cd android
-          ./gradlew assembleRelease
+          NODE_OPTIONS="--no-experimental-strip-types" ./gradlew assembleRelease
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
