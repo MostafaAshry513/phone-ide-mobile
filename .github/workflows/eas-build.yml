@@ -1,0 +1,58 @@
+name: EAS Build (Cloud)
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform'
+        type: choice
+        options: [android, ios, all]
+        default: android
+      profile:
+        description: 'Build profile'
+        type: choice
+        options: [development, preview, production]
+        default: preview
+
+jobs:
+  eas-build:
+    name: EAS Build — ${{ inputs.platform }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Submit EAS Build
+        run: |
+          if [ "${{ inputs.platform }}" = "all" ]; then
+            eas build --platform all --profile ${{ inputs.profile }} --non-interactive --wait
+          else
+            eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive --wait
+          fi
+
+      - name: Download Android artifact
+        if: ${{ inputs.platform == 'android' || inputs.platform == 'all' }}
+        run: |
+          # EAS auto-downloads; copy to artifacts directory
+          mkdir -p artifacts
+          find . -name "*.apk" -o -name "*.aab" | head -20 | xargs -I {} cp {} artifacts/ 2>/dev/null || true
+
+      - name: Upload Android artifact
+        if: ${{ inputs.platform == 'android' || inputs.platform == 'all' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: eas-build-android
+          path: artifacts/
+          retention-days: 30

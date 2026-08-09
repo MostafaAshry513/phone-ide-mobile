@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v0.1.0)'
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bump version
+        run: |
+          TAG=${{ github.ref_name || inputs.version }}
+          VERSION=${TAG#v}
+          echo "Building version $VERSION"
+          # Update version in app.json
+          npx json -I -f app.json -e "this.expo.version=\"$VERSION\""
+          npx json -I -f package.json -e "this.version=\"$VERSION\""
+
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Make Gradle executable
+        run: chmod +x android/gradlew
+
+      - name: Build release AAB (Play Store)
+        run: |
+          cd android
+          ./gradlew bundleRelease
+        env:
+          ANDROID_SIGNING_KEY: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+
+      - name: Build release APK (direct install)
+        run: |
+          cd android
+          ./gradlew assembleRelease
+        env:
+          ANDROID_SIGNING_KEY: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-ide-release-aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          retention-days: 90
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-ide-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 90
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.version }}
+          name: Phone IDE ${{ github.ref_name || inputs.version }}
+          body: |
+            ## Phone IDE — Native Code Editor for Phones
+
+            ### Download
+            - **APK** (install directly): see artifacts below
+            - **AAB** (Play Store): see artifacts below
+
+            ### Features
+            - 🎹 Keyboard-first, zero-touch UX
+            - 🌙 Dark theme optimized for code editing
+            - 📁 Native file system access
+            - 🔍 Find/replace, go-to-line, command palette
+            - 🐙 Git integration (status, diff, commit)
+            - ⚡ Fully offline — no internet needed
+            - 📱 Cross-platform (Android + iOS)
+
+            See [README](https://github.com/${{ github.repository }}#readme) for full details.
+          draft: false
+          prerelease: ${{ contains(github.ref_name || inputs.version, 'beta') || contains(github.ref_name || inputs.version, 'alpha') || contains(github.ref_name || inputs.version, 'rc') }}
+          generateReleaseNotes: true
+          files: |
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/release/*.apk

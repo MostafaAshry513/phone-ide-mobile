@@ -1,0 +1,28 @@
+---
+name: Bug report
+about: Something is broken
+title: '[Bug] '
+labels: bug
+assignees: MostafaAshry513
+---
+
+**Describe the bug**
+A clear description of what's broken.
+
+**To Reproduce**
+Steps to reproduce:
+1. Open '...'
+2. Press '...'
+3. See error
+
+**Expected behavior**
+What should have happened.
+
+**Device info:**
+- Device: [e.g. Unihertz Titan]
+- Android version: [e.g. 14]
+- Keyboard: [e.g. Physical / On-screen]
+- App version: [e.g. v0.1.0]
+
+**Screenshots**
+If applicable, add screenshots.
