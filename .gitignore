@@ -17,14 +17,10 @@ dist/
 .secrets/
 
 ### Android
-android/app/build/
-android/.gradle/
-android/build/
-android/local.properties
+android/
 
 ### iOS
-ios/Pods/
-ios/build/
+ios/
 
 ### IDE
 .vscode/

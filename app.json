@@ -23,7 +23,6 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png"
       },
-      "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "pan",
       "allowBackup": true
     },
