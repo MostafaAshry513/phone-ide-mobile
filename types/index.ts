@@ -2,7 +2,7 @@
  * ─── Shared Types ───
  */
 
-export type Theme = typeof import('../lib/store').THEME.dark;
+export type Theme = typeof import('../lib/store').THEME;
 
 export type PlatformOS = 'android' | 'ios' | 'web';
 

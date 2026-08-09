@@ -1,128 +1,155 @@
 /**
- * Phone IDE — Main App
- *
- * Keyboard-first code editor for phones.
- * Cross-platform (Android + iOS) via React Native + Expo.
+ * Phone IDE — Main App Shell
+ * Full integration of all components with keyboard-first UX.
  */
+import { useEffect, useCallback, useState } from 'react';
+import { View, StyleSheet, StatusBar, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { THEME, useAppState, useStore } from './lib/store';
+import * as FS from './lib/filesystem';
+import { DEFAULT_SHORTCUTS } from './lib/keyboard';
+import type { Command } from './lib/store';
 
-import React, { useEffect, useCallback, useRef } from 'react';
-import {
-  StatusBar,
-  StyleSheet,
-  View,
-  Text,
-  Dimensions,
-  Platform,
-  KeyboardAvoidingView,
-  Keyboard,
-} from 'react-native';
-import { THEME, getAppState } from '../lib/store';
-import { DEFAULT_SHORTCUTS, keyEventToShortcut, type KeyBinding } from '../lib/keyboard';
-
-// ─── Colors (dark theme default) ───
-const C = THEME.dark;
+import Editor from './components/editor/Editor';
+import FileExplorer from './components/explorer/FileExplorer';
+import FileTabs from './components/ui/FileTabs';
+import TopBar from './components/ui/TopBar';
+import BottomBar from './components/ui/BottomBar';
+import KeyboardBar from './components/ui/KeyboardBar';
+import CommandPalette from './components/panels/CommandPalette';
+import SearchPanel from './components/panels/SearchPanel';
+import GitPanel from './components/panels/GitPanel';
+import ProblemsPanel from './components/panels/ProblemsPanel';
+import SnippetsPanel from './components/panels/SnippetsPanel';
+import SymbolPanel from './components/panels/SymbolPanel';
+import Terminal from './components/terminal/Terminal';
 
 export default function App() {
-  const mountedRef = useRef(false);
+  // ─── State selectors ───
+  const activePanel = useAppState((s) => s.activePanel);
+  const openTabs = useAppState((s) => s.openTabs);
+  const activeTabIdx = useAppState((s) => s.activeTabIdx);
+  const settings = useAppState((s) => s.settings);
+  const commandPaletteOpen = useAppState((s) => s.commandPaletteOpen);
+  const searchPanelOpen = useAppState((s) => s.searchPanelOpen);
+  const gitPanelOpen = useAppState((s) => s.gitPanelOpen);
+  const problemsPanelOpen = useAppState((s) => s.problemsPanelOpen);
+  const terminalVisible = useAppState((s) => s.terminalVisible);
 
-  // ─── Keyboard shortcut handler ───
-  // In React Native, physical keyboard events come through keyDown/keyUp
-  // on the root view. On Android with a physical keyboard, this works natively.
+  // ─── Actions (stable references from zustand) ───
+  const toggleExplorer = useStore((s) => s.toggleExplorer);
+  const toggleCommandPalette = useStore((s) => s.toggleCommandPalette);
+  const toggleSearchPanel = useStore((s) => s.toggleSearchPanel);
+  const toggleGitPanel = useStore((s) => s.toggleGitPanel);
+  const toggleProblemsPanel = useStore((s) => s.toggleProblemsPanel);
+  const toggleTerminal = useStore((s) => s.toggleTerminal);
+  const closeTab = useStore((s) => s.closeTab);
+  const switchTab = useStore((s) => s.switchTab);
+  const reopenClosedTab = useStore((s) => s.reopenClosedTab);
+  const registerCommand = useStore((s) => s.registerCommand);
+  const updateSettings = useStore((s) => s.updateSettings);
 
-  const handleKeyDown = useCallback(
-    (e: any) => {
-      // Extract key info from React Native key event
-      const shortcut = keyEventToShortcut({
-        key: e.nativeEvent?.key || e.key,
-        ctrlKey: e.nativeEvent?.ctrlKey || e.ctrlKey || false,
-        altKey: e.nativeEvent?.altKey || e.altKey || false,
-        shiftKey: e.nativeEvent?.shiftKey || e.shiftKey || false,
-        metaKey: e.nativeEvent?.metaKey || e.metaKey || false,
-      });
+  const [editorContent, setEditorContent] = useState('');
+  const [editorFileName, setEditorFileName] = useState('untitled.js');
 
-      // Handle some shortcuts at the app level
-      const app = getAppState();
-      switch (shortcut) {
-        case 'mod+b':
-          app.toggleExplorer();
-          break;
-        case 'mod+k':
-          app.setActivePanel(app.activePanel === 'terminal' ? 'editor' : 'terminal');
-          break;
-        case 'mod+shift+p':
-          app.toggleCommandPalette();
-          break;
-        case 'mod+p':
-          app.toggleSearchPanel();
-          break;
-        // More shortcuts will be handled by focused components
-      }
-    },
-    []
-  );
-
+  // ─── Register default keyboard shortcut commands ───
   useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
+    const actionMap: Record<string, () => void> = {
+      'toggle-explorer': toggleExplorer,
+      'toggle-terminal': toggleTerminal,
+      'command-palette': toggleCommandPalette,
+      'search-files': toggleSearchPanel,
+      'git-panel': toggleGitPanel,
+      'problems-panel': toggleProblemsPanel,
+      'close-tab': () => closeTab(activeTabIdx),
+      'next-tab': () => switchTab((activeTabIdx + 1) % Math.max(1, openTabs.length)),
+      'prev-tab': () => switchTab((activeTabIdx - 1 + openTabs.length) % Math.max(1, openTabs.length)),
+      'reopen-tab': reopenClosedTab,
+      'zoom-in': () => updateSettings({ fontSize: Math.min(settings.fontSize + 1, 24) }),
+      'zoom-out': () => updateSettings({ fontSize: Math.max(settings.fontSize - 1, 6) }),
+      'zoom-reset': () => updateSettings({ fontSize: 12 }),
     };
+    DEFAULT_SHORTCUTS.forEach((s) => {
+      const run = actionMap[s.id] || (() => {});
+      registerCommand({ id: s.id, label: s.description, shortcut: s.keys, category: s.category, run });
+    });
+  }, []); // register once on mount
+
+  // ─── Load file content when tab changes ───
+  useEffect(() => {
+    const tab = openTabs[activeTabIdx];
+    if (tab?.path) {
+      setEditorFileName(tab.name);
+      FS.readFile(tab.path).then(setEditorContent).catch(() => setEditorContent(''));
+    } else {
+      setEditorFileName('untitled');
+      setEditorContent('');
+    }
+  }, [activeTabIdx, openTabs]);
+
+  // ─── Content change from editor ───
+  const handleContentChange = useCallback((content: string) => {
+    setEditorContent(content);
   }, []);
 
-  // ─── Render ───
+  // ─── Save handler ───
+  const handleSave = useCallback(async (content: string) => {
+    const tab = openTabs[activeTabIdx];
+    if (tab?.path) {
+      try { await FS.writeFile(tab.path, content); } catch {}
+    }
+  }, [activeTabIdx, openTabs]);
+
+  const showEditor = activePanel === 'editor' || !terminalVisible;
+
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <StatusBar barStyle="light-content" backgroundColor={C.deep} />
-      <View style={styles.container}>
-        {/* Placeholder — components will be built in next iterations */}
-        <View style={styles.placeholder}>
-          <Text style={styles.title}>Phone IDE</Text>
-          <Text style={styles.subtitle}>Keyboard-first code editor</Text>
-          <Text style={styles.status}>
-            React Native scaffold ready.{'\n'}
-            Components coming next.
-          </Text>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar barStyle="light-content" backgroundColor={THEME.deep} />
+      <View style={styles.root}>
+        <TopBar />
+        <FileTabs />
+
+        <View style={styles.main}>
+          <FileExplorer />
+          <View style={styles.content}>
+            <View style={[styles.editorWrap, showEditor && styles.visible]}>
+              <Editor
+                content={editorContent}
+                fileName={editorFileName}
+                fontSize={settings.fontSize}
+                onContentChange={handleContentChange}
+                onSave={handleSave}
+              />
+            </View>
+            <View style={[styles.terminalWrap, terminalVisible && styles.visible]}>
+              <Terminal visible={terminalVisible} onClose={toggleTerminal} />
+            </View>
+
+            {/* Overlay panels */}
+            <SearchPanel visible={searchPanelOpen} onClose={toggleSearchPanel} />
+            <GitPanel visible={gitPanelOpen} onClose={toggleGitPanel} projectRoot="" />
+            <ProblemsPanel visible={problemsPanelOpen} onClose={toggleProblemsPanel} />
+          </View>
         </View>
+
+        <BottomBar />
+        <KeyboardBar visible />
+
+        {/* Modal panels */}
+        <CommandPalette visible={commandPaletteOpen} onClose={toggleCommandPalette} />
+        <SnippetsPanel visible={false} onClose={() => {}} />
+        <SymbolPanel visible={false} onClose={() => {}} />
       </View>
-    </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: C.deep,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: C.deep,
-  },
-  placeholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-    gap: 12,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: C.accent,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: C.textDim,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  status: {
-    fontSize: 11,
-    color: C.textFaint,
-    textAlign: 'center',
-    marginTop: 24,
-    lineHeight: 18,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
+  safe: { flex: 1, backgroundColor: THEME.deep },
+  root: { flex: 1, backgroundColor: THEME.deep },
+  main: { flex: 1, flexDirection: 'row', overflow: 'hidden' },
+  content: { flex: 1, position: 'relative', minWidth: 0 },
+  editorWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'none' },
+  terminalWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'none' },
+  visible: { display: 'flex' },
 });

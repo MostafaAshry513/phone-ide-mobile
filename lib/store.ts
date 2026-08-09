@@ -1,16 +1,21 @@
-import { useState } from 'react';
-
 /**
- * ─── App State (Zustand store) ───
- * Central state for the Phone IDE. No external dependencies except Zustand.
+ * Phone IDE — Zustand State Management
+ *
+ * Production-ready state store with AsyncStorage persistence.
+ * Uses zustand v5 with persist middleware.
  */
 
-// ─── Types ───
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface FileTab {
   path: string | null;
   name: string;
   dirty: boolean;
+  content?: string; // in-memory file content cache (not persisted)
 }
 
 export interface Settings {
@@ -23,13 +28,7 @@ export interface Settings {
   theme: 'dark' | 'light';
 }
 
-export interface Panel {
-  id: string;
-  label: string;
-  icon: string;
-  component: React.ComponentType<any>;
-}
-
+/** Panel identifiers for navigation (kept for backward compat). */
 export type PanelId =
   | 'editor'
   | 'files'
@@ -39,8 +38,6 @@ export type PanelId =
   | 'problems'
   | 'snippets'
   | 'symbols';
-
-// ─── Registry Types ───
 
 export interface Command {
   id: string;
@@ -58,23 +55,31 @@ export interface Snippet {
   description?: string;
 }
 
-// ─── Store State ───
+export interface SystemResources {
+  cpu: { percent: number };
+  memory: { percent: number; used: number; total: number; free: number };
+}
+
+export type ActivePanel = 'editor' | 'terminal';
+
+// ─── Store State & Actions ────────────────────────────────────────────────────
 
 interface AppState {
-  // Editor
+  // Editor tabs
   openTabs: FileTab[];
   activeTabIdx: number;
   currentFile: string | null;
   recentFiles: string[];
-  editorFontSize: number;
 
   // Explorer
   explorerOpen: boolean;
   currentDir: string;
   projectRoot: string;
 
-  // Panels
-  activePanel: PanelId;
+  // Main panel
+  activePanel: ActivePanel;
+
+  // UI panels
   commandPaletteOpen: boolean;
   searchPanelOpen: boolean;
   gitPanelOpen: boolean;
@@ -87,29 +92,37 @@ interface AppState {
   // Terminal
   terminalVisible: boolean;
 
-  // Commands & Snippets
+  // Registries
   commands: Command[];
   snippets: Snippet[];
 
-  // Actions
-  openFile: (path: string) => void;
+  // System
+  systemResources: SystemResources;
+
+  // ── Actions ──
+  openFile: (path: string, content?: string) => void;
   closeTab: (idx: number) => void;
   switchTab: (idx: number) => void;
   reopenClosedTab: () => void;
+  markTabDirty: (idx: number, dirty: boolean) => void;
+  updateTabContent: (idx: number, content: string) => void;
   toggleExplorer: () => void;
   setCurrentDir: (dir: string) => void;
-  setActivePanel: (panel: PanelId) => void;
+  setActivePanel: (panel: ActivePanel) => void;
   toggleCommandPalette: () => void;
   toggleSearchPanel: () => void;
   toggleGitPanel: () => void;
   toggleProblemsPanel: () => void;
   toggleFindBar: () => void;
+  toggleTerminal: () => void;
   updateSettings: (patch: Partial<Settings>) => void;
   registerCommand: (cmd: Command) => void;
   registerSnippet: (snip: Snippet) => void;
+  addRecentFile: (path: string) => void;
+  updateSystemResources: (resources: SystemResources) => void;
 }
 
-// ─── Default Settings ───
+// ─── Default Settings ─────────────────────────────────────────────────────────
 
 export const DEFAULT_SETTINGS: Settings = {
   fontSize: 12,
@@ -121,232 +134,274 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
 };
 
-// ─── Theme ───
+// ─── Dark Theme Colors ────────────────────────────────────────────────────────
 
 export const THEME = {
-  dark: {
-    deep: '#080b16',
-    base: '#0d1020',
-    surface: '#131729',
-    overlay: '#1a1f35',
-    border: '#232946',
-    borderGlow: '#2e3560',
-    text: '#c8d0e7',
-    textDim: '#6b7298',
-    textFaint: '#434b6b',
-    accent: '#7c5cfc',
-    accentGlow: '#9d7cfc',
-    blue: '#5d9cf5',
-    green: '#73d68b',
-    amber: '#f0b656',
-    red: '#f4737b',
-    pink: '#d57bba',
-    cyan: '#5cd6d0',
-    background: '#080b16',
-    card: '#131729',
-  },
-  light: {
-    deep: '#f0f2f5',
-    base: '#ffffff',
-    surface: '#f8f9fa',
-    overlay: '#e9ecef',
-    border: '#dee2e6',
-    borderGlow: '#ced4da',
-    text: '#212529',
-    textDim: '#6c757d',
-    textFaint: '#adb5bd',
-    accent: '#6741d9',
-    accentGlow: '#7950f2',
-    blue: '#1c7ed6',
-    green: '#2b8a3e',
-    amber: '#e67700',
-    red: '#e03131',
-    pink: '#a61e4d',
-    cyan: '#0b7285',
-    background: '#f0f2f5',
-    card: '#ffffff',
-  },
-};
+  deep: '#080b16',
+  base: '#0d1020',
+  surface: '#131729',
+  overlay: '#1a1f35',
+  border: '#232946',
+  borderGlow: '#2e3560',
+  text: '#c8d0e7',
+  textDim: '#6b7298',
+  textFaint: '#434b6b',
+  accent: '#7c5cfc',
+  accentGlow: '#9d7cfc',
+  blue: '#5d9cf5',
+  green: '#73d68b',
+  amber: '#f0b656',
+  red: '#f4737b',
+  pink: '#d57bba',
+  cyan: '#5cd6d0',
+} as const;
 
-// ─── Simple Zustand-like store (no external deps) ───
+export type ThemeColors = typeof THEME;
 
-type Listener = () => void;
+// ─── Initial State Factory ────────────────────────────────────────────────────
 
-function createStore<T extends Record<string, any>>(
-  initialState: T
-): {
-  getState: () => T;
-  setState: (partial: Partial<T> | ((state: T) => Partial<T>)) => void;
-  subscribe: (listener: Listener) => () => void;
-} {
-  let state = { ...initialState };
-  const listeners = new Set<Listener>();
-
-  const getState = () => state;
-
-  const setState = (partial: Partial<T> | ((state: T) => Partial<T>)) => {
-    const next = typeof partial === 'function' ? partial(state) : partial;
-    state = { ...state, ...next };
-    listeners.forEach((l) => l());
-  };
-
-  const subscribe = (listener: Listener) => {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
-  };
-
-  return { getState, setState, subscribe };
-}
-
-// A minimal React hook wrapper
-function useStore<T>(store: ReturnType<typeof createStore>, selector: (s: any) => T): T {
-  const [value, setValue] = useState(() => selector(store.getState()));
-  // We use a simpler pattern for the scaffold — just re-render on any change
-  // In production, we'd use useSyncExternalStore
-  return value;
-}
-
-// ─── Create app store ───
-
-const store = createStore({
+const initialState = {
   openTabs: [] as FileTab[],
   activeTabIdx: -1,
   currentFile: null as string | null,
   recentFiles: [] as string[],
-  editorFontSize: 12,
 
   explorerOpen: false,
   currentDir: '/storage/emulated/0',
   projectRoot: '/storage/emulated/0',
 
-  activePanel: 'editor' as PanelId,
+  activePanel: 'editor' as ActivePanel,
+
   commandPaletteOpen: false,
   searchPanelOpen: false,
   gitPanelOpen: false,
   problemsPanelOpen: false,
   findBarOpen: false,
 
-  settings: { ...DEFAULT_SETTINGS },
+  settings: { ...DEFAULT_SETTINGS } as Settings,
 
   terminalVisible: false,
 
   commands: [] as Command[],
   snippets: [] as Snippet[],
 
-  // ── Actions ──
+  systemResources: {
+    cpu: { percent: 0 },
+    memory: { percent: 0, used: 0, total: 0, free: 0 },
+  } as SystemResources,
+};
 
-  openFile: (path: string) => {
-    const { openTabs } = store.getState();
-    const existingIdx = openTabs.findIndex((t) => t.path === path);
-    if (existingIdx >= 0) {
-      store.setState({ activeTabIdx: existingIdx, currentFile: path });
-      return;
-    }
-    const name = path.split('/').pop() || 'untitled';
-    const newTab: FileTab = { path, name, dirty: false };
-    store.setState({
-      openTabs: [...openTabs, newTab],
-      activeTabIdx: openTabs.length,
-      currentFile: path,
-    });
-  },
+// ─── Recent Files Limit ───────────────────────────────────────────────────────
 
-  closeTab: (idx: number) => {
-    const { openTabs, activeTabIdx, recentFiles } = store.getState();
-    if (openTabs.length === 0) return;
-    const closed = openTabs[idx];
-    const newTabs = openTabs.filter((_, i) => i !== idx);
-    const newRecent = closed.path
-      ? [closed.path, ...recentFiles.filter((f) => f !== closed.path)].slice(0, 10)
-      : recentFiles;
-    let newIdx = activeTabIdx;
-    if (idx < activeTabIdx) newIdx--;
-    if (newIdx >= newTabs.length) newIdx = newTabs.length - 1;
-    store.setState({
-      openTabs: newTabs,
-      activeTabIdx: newIdx,
-      recentFiles: newRecent,
-      currentFile: newTabs.length > 0 ? newTabs[Math.max(0, newIdx)].path : null,
-    });
-  },
+const MAX_RECENT_FILES = 10;
 
-  switchTab: (idx: number) => {
-    const { openTabs } = store.getState();
-    if (idx >= 0 && idx < openTabs.length) {
-      store.setState({ activeTabIdx: idx, currentFile: openTabs[idx].path });
-    }
-  },
+// ─── Persistent Fields (selective persistence) ────────────────────────────────
 
-  reopenClosedTab: () => {
-    const { recentFiles } = store.getState();
-    if (recentFiles.length > 0) {
-      store.getState().openFile(recentFiles[0]);
-    }
-  },
-
-  toggleExplorer: () => {
-    store.setState({ explorerOpen: !store.getState().explorerOpen });
-  },
-
-  setCurrentDir: (dir: string) => {
-    store.setState({ currentDir: dir });
-  },
-
-  setActivePanel: (panel: PanelId) => {
-    store.setState({ activePanel: panel });
-  },
-
-  toggleCommandPalette: () => {
-    store.setState({ commandPaletteOpen: !store.getState().commandPaletteOpen });
-  },
-
-  toggleSearchPanel: () => {
-    store.setState({ searchPanelOpen: !store.getState().searchPanelOpen });
-  },
-
-  toggleGitPanel: () => {
-    store.setState({ gitPanelOpen: !store.getState().gitPanelOpen });
-  },
-
-  toggleProblemsPanel: () => {
-    store.setState({ problemsPanelOpen: !store.getState().problemsPanelOpen });
-  },
-
-  toggleFindBar: () => {
-    store.setState({ findBarOpen: !store.getState().findBarOpen });
-  },
-
-  updateSettings: (patch: Partial<Settings>) => {
-    store.setState({ settings: { ...store.getState().settings, ...patch } });
-  },
-
-  registerCommand: (cmd: Command) => {
-    const { commands } = store.getState();
-    if (!commands.find((c) => c.id === cmd.id)) {
-      store.setState({ commands: [...commands, cmd] });
-    }
-  },
-
-  registerSnippet: (snip: Snippet) => {
-    const { snippets } = store.getState();
-    if (!snippets.find((s) => s.id === snip.id)) {
-      store.setState({ snippets: [...snippets, snip] });
-    }
-  },
+/**
+ * Only persist user data that survives app restarts.
+ * Transient UI state (panel visibility, palette open, etc.) and
+ * non-serializable data (commands with `run` functions, tab content cache)
+ * are excluded.
+ */
+const persistFields = (state: AppState) => ({
+  openTabs: state.openTabs.map(({ content, ...tab }) => tab), // strip content cache
+  recentFiles: state.recentFiles,
+  currentDir: state.currentDir,
+  projectRoot: state.projectRoot,
+  settings: state.settings,
+  snippets: state.snippets,
 });
 
-// ─── Exports ───
+// ─── Store ────────────────────────────────────────────────────────────────────
 
-export function useAppState<T>(selector: (s: typeof store.getState extends () => infer S ? S : never) => T): T {
-  return useStore(store, selector);
+export const useStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      ...initialState,
+
+      // ── Editor Actions ──────────────────────────────────────────────────
+
+      openFile: (path: string, content?: string) => {
+        const { openTabs } = get();
+        const existingIdx = openTabs.findIndex((t) => t.path === path);
+
+        if (existingIdx >= 0) {
+          // File already open — switch to its tab and optionally update content
+          set({
+            activeTabIdx: existingIdx,
+            currentFile: path,
+            ...(content !== undefined
+              ? {
+                  openTabs: openTabs.map((t, i) =>
+                    i === existingIdx ? { ...t, content } : t,
+                  ),
+                }
+              : {}),
+          });
+          return;
+        }
+
+        // New tab
+        const name = path.split('/').pop() || 'untitled';
+        const newTab: FileTab = { path, name, dirty: false, content };
+        set({
+          openTabs: [...openTabs, newTab],
+          activeTabIdx: openTabs.length,
+          currentFile: path,
+        });
+      },
+
+      closeTab: (idx: number) => {
+        const { openTabs, activeTabIdx, recentFiles } = get();
+        if (openTabs.length === 0 || idx < 0 || idx >= openTabs.length) return;
+
+        const closed = openTabs[idx];
+        const newTabs = openTabs.filter((_, i) => i !== idx);
+
+        // Push closed file to front of recentFiles (deduplicated, capped)
+        const newRecent =
+          closed.path != null
+            ? [closed.path, ...recentFiles.filter((f) => f !== closed.path)].slice(
+                0,
+                MAX_RECENT_FILES,
+              )
+            : recentFiles;
+
+        // Adjust active tab index
+        let newIdx = activeTabIdx;
+        if (idx < activeTabIdx) {
+          newIdx--;
+        }
+        if (newIdx >= newTabs.length) {
+          newIdx = newTabs.length - 1;
+        }
+
+        set({
+          openTabs: newTabs,
+          activeTabIdx: newIdx,
+          recentFiles: newRecent,
+          currentFile: newTabs.length > 0 ? newTabs[Math.max(0, newIdx)].path : null,
+        });
+      },
+
+      switchTab: (idx: number) => {
+        const { openTabs } = get();
+        if (idx >= 0 && idx < openTabs.length) {
+          const tab = openTabs[idx];
+          set({ activeTabIdx: idx, currentFile: tab.path });
+        }
+      },
+
+      reopenClosedTab: () => {
+        const { recentFiles } = get();
+        if (recentFiles.length > 0) {
+          get().openFile(recentFiles[0]);
+        }
+      },
+
+      markTabDirty: (idx: number, dirty: boolean) => {
+        const { openTabs } = get();
+        if (idx < 0 || idx >= openTabs.length) return;
+        set({
+          openTabs: openTabs.map((t, i) => (i === idx ? { ...t, dirty } : t)),
+        });
+      },
+
+      updateTabContent: (idx: number, content: string) => {
+        const { openTabs } = get();
+        if (idx < 0 || idx >= openTabs.length) return;
+        set({
+          openTabs: openTabs.map((t, i) => (i === idx ? { ...t, content } : t)),
+        });
+      },
+
+      // ── Explorer Actions ────────────────────────────────────────────────
+
+      toggleExplorer: () => set((s) => ({ explorerOpen: !s.explorerOpen })),
+
+      setCurrentDir: (dir: string) => set({ currentDir: dir }),
+
+      // ── Panel Actions ───────────────────────────────────────────────────
+
+      setActivePanel: (panel: ActivePanel) => set({ activePanel: panel }),
+
+      toggleCommandPalette: () =>
+        set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
+
+      toggleSearchPanel: () =>
+        set((s) => ({ searchPanelOpen: !s.searchPanelOpen })),
+
+      toggleGitPanel: () => set((s) => ({ gitPanelOpen: !s.gitPanelOpen })),
+
+      toggleProblemsPanel: () =>
+        set((s) => ({ problemsPanelOpen: !s.problemsPanelOpen })),
+
+      toggleFindBar: () => set((s) => ({ findBarOpen: !s.findBarOpen })),
+
+      toggleTerminal: () =>
+        set((s) => ({
+          activePanel: s.activePanel === 'terminal' ? 'editor' : 'terminal',
+          terminalVisible: !s.terminalVisible,
+        })),
+
+      // ── Settings Actions ────────────────────────────────────────────────
+
+      updateSettings: (patch: Partial<Settings>) =>
+        set((s) => ({ settings: { ...s.settings, ...patch } })),
+
+      // ── Registry Actions ────────────────────────────────────────────────
+
+      registerCommand: (cmd: Command) => {
+        const { commands } = get();
+        if (!commands.find((c) => c.id === cmd.id)) {
+          set({ commands: [...commands, cmd] });
+        }
+      },
+
+      registerSnippet: (snip: Snippet) => {
+        const { snippets } = get();
+        if (!snippets.find((s) => s.id === snip.id)) {
+          set({ snippets: [...snippets, snip] });
+        }
+      },
+
+      // ── File Actions ────────────────────────────────────────────────────
+
+      addRecentFile: (path: string) => {
+        const { recentFiles } = get();
+        const deduped = recentFiles.filter((f) => f !== path);
+        set({ recentFiles: [path, ...deduped].slice(0, MAX_RECENT_FILES) });
+      },
+
+      // ── System Actions ──────────────────────────────────────────────────
+
+      updateSystemResources: (resources: SystemResources) =>
+        set({ systemResources: resources }),
+    }),
+    {
+      name: 'phone-ide-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: persistFields,
+      // Hydration happens asynchronously; components should handle the initial
+      // render gracefully before persisted state is restored.
+    },
+  ),
+);
+
+// ─── Typed Selector Hook ──────────────────────────────────────────────────────
+
+/** Typed hook for selecting slices of AppState. */
+export function useAppState<T>(selector: (state: AppState) => T): T {
+  return useStore(selector);
 }
 
-export function getAppState() {
-  return store.getState();
+// ─── Imperative Getter (for non-React contexts) ───────────────────────────────
+
+/** Get the current store snapshot outside of React. */
+export function getAppState(): AppState {
+  return useStore.getState();
 }
 
-export function setAppState(partial: any) {
-  store.setState(partial);
-}
+// ─── Re-exports for convenience ───────────────────────────────────────────────
 
-export { store as appStore };
+export { useStore as appStore };

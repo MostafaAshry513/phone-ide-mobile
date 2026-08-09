@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Phone IDE Editor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: #080b16;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  #editor {
+    height: 100%;
+    width: 100%;
+  }
+
+  /* CodeMirror scrollbar styling */
+  .cm-editor {
+    height: 100%;
+    background: #080b16 !important;
+  }
+
+  .cm-editor .cm-scroller {
+    overflow: auto;
+  }
+
+  .cm-editor .cm-scroller::-webkit-scrollbar { width: 10px; height: 10px; }
+  .cm-editor .cm-scroller::-webkit-scrollbar-track { background: transparent; }
+  .cm-editor .cm-scroller::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.12);
+    border-radius: 5px;
+    min-height: 30px;
+  }
+  .cm-editor .cm-scroller::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.20); }
+  .cm-editor .cm-scroller::-webkit-scrollbar-corner { background: transparent; }
+
+  /* Gutter styling */
+  .cm-editor .cm-gutters {
+    background: #080b16 !important;
+    border-right: 1px solid rgba(255,255,255,0.06) !important;
+    color: #4a5568;
+  }
+
+  .cm-editor .cm-activeLineGutter {
+    background: rgba(255,255,255,0.04) !important;
+    color: #718096;
+  }
+
+  .cm-editor .cm-activeLine {
+    background: rgba(255,255,255,0.03) !important;
+  }
+
+  /* Cursor */
+  .cm-editor .cm-cursor {
+    border-left-color: #528bff !important;
+    border-left-width: 2px;
+  }
+
+  /* Selection */
+  .cm-editor .cm-selectionBackground,
+  .cm-editor.cm-focused .cm-selectionBackground {
+    background: rgba(82,139,255,0.25) !important;
+  }
+
+  .cm-editor .cm-selectionMatch {
+    background: rgba(82,139,255,0.12) !important;
+  }
+
+  /* Search panel */
+  .cm-editor .cm-panel.cm-search {
+    background: #0d1120;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding: 4px 8px;
+    color: #a0aec0;
+    font-size: 13px;
+  }
+
+  .cm-editor .cm-search input {
+    background: #141829;
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #e2e8f0;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+  }
+
+  .cm-editor .cm-search input:focus {
+    border-color: rgba(82,139,255,0.5);
+  }
+
+  .cm-editor .cm-search button {
+    background: #1a2035;
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #a0aec0;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+  }
+
+  .cm-editor .cm-search button:hover { background: #232b42; color: #e2e8f0; }
+  .cm-editor .cm-search button:active { background: #2d3754; }
+
+  .cm-editor .cm-search button[name="close"] {
+    background: transparent;
+    border: none;
+    font-size: 16px;
+    padding: 0 4px;
+  }
+
+  /* Fold gutter */
+  .cm-editor .cm-foldGutter .cm-gutterElement {
+    color: #4a5568;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0 4px;
+  }
+  .cm-editor .cm-foldGutter .cm-gutterElement:hover { color: #a0aec0; }
+
+  /* Matching bracket highlight */
+  .cm-editor .cm-matchingBracket {
+    background: rgba(82,139,255,0.2) !important;
+    outline: 1px solid rgba(82,139,255,0.3);
+  }
+
+  .cm-editor .cm-nonmatchingBracket {
+    background: rgba(255,100,100,0.2) !important;
+    outline: 1px solid rgba(255,100,100,0.3);
+  }
+
+  /* Tooltip / hover */
+  .cm-editor .cm-tooltip {
+    background: #1a2035;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 12px;
+    padding: 4px 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+
+  /* Indent guides */
+  .cm-editor .cm-indent-guide {
+    border-right: 1px solid rgba(255,255,255,0.06);
+  }
+
+  /* Line wrapping indicator */
+  .cm-editor .cm-lineWrapping {
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    word-break: normal;
+  }
+
+  /* Focus outline */
+  .cm-editor.cm-focused { outline: none !important; }
+
+  /* Content area */
+  .cm-editor .cm-content {
+    font-family: inherit;
+    padding: 0 8px !important;
+  }
+
+  .cm-editor .cm-line {
+    padding: 0 4px !important;
+  }
+
+  /* Placeholder */
+  .cm-editor .cm-placeholder {
+    color: rgba(255,255,255,0.2) !important;
+  }
+
+  /* Prevent iOS overscroll / bounce */
+  html { position: fixed; width: 100%; height: 100%; }
+  body { position: relative; }
+
+  /* Loading indicator */
+  #loading {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #080b16;
+    z-index: 100;
+    transition: opacity 0.3s;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  #loading .spinner {
+    width: 32px;
+    height: 32px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-top-color: #528bff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Toast notifications */
+  #toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a2035;
+    color: #e2e8f0;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="loading"><div class="spinner"></div></div>
+<div id="editor"></div>
+<div id="toast"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "@codemirror/state":          "https://esm.sh/@codemirror/state@6.4.1",
+    "@codemirror/view":           "https://esm.sh/@codemirror/view@6.35.3",
+    "@codemirror/commands":       "https://esm.sh/@codemirror/commands@6.7.1",
+    "@codemirror/language":       "https://esm.sh/@codemirror/language@6.10.6",
+    "@codemirror/search":         "https://esm.sh/@codemirror/search@6.5.8",
+    "@codemirror/autocomplete":   "https://esm.sh/@codemirror/autocomplete@6.18.4",
+    "@codemirror/lang-javascript":"https://esm.sh/@codemirror/lang-javascript@6.2.2",
+    "@codemirror/lang-python":    "https://esm.sh/@codemirror/lang-python@6.1.6",
+    "@codemirror/lang-html":      "https://esm.sh/@codemirror/lang-html@6.4.9",
+    "@codemirror/lang-css":       "https://esm.sh/@codemirror/lang-css@6.3.1",
+    "@codemirror/lang-json":      "https://esm.sh/@codemirror/lang-json@6.0.1",
+    "@codemirror/lang-markdown":  "https://esm.sh/@codemirror/lang-markdown@6.3.1",
+    "@codemirror/lang-cpp":       "https://esm.sh/@codemirror/lang-cpp@6.0.2",
+    "@codemirror/lang-go":        "https://esm.sh/@codemirror/lang-go@6.0.1",
+    "@codemirror/lang-rust":      "https://esm.sh/@codemirror/lang-rust@6.0.1",
+    "@codemirror/lang-php":       "https://esm.sh/@codemirror/lang-php@6.0.1",
+    "@codemirror/lang-sql":       "https://esm.sh/@codemirror/lang-sql@6.8.0",
+    "@codemirror/lang-xml":       "https://esm.sh/@codemirror/lang-xml@6.1.0",
+    "@codemirror/theme-one-dark": "https://esm.sh/@codemirror/theme-one-dark@6.1.2",
+    "@codemirror/legacy-modes":   "https://esm.sh/@codemirror/legacy-modes@6.4.3",
+    "crelt":                      "https://esm.sh/crelt@1.0.6",
+    "style-mod":                  "https://esm.sh/style-mod@4.1.2",
+    "w3c-keyname":               "https://esm.sh/w3c-keyname@2.2.8"
+  }
+}
+</script>
+
+<script type="module">
+// =============================================================================
+//  Phone IDE — CodeMirror 6 editor for React Native WebView
+// =============================================================================
+
+import { EditorState, Compartment } from '@codemirror/state';
+import {
+  EditorView,
+  keymap,
+  lineNumbers,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  drawSelection,
+  dropCursor,
+  rectangularSelection,
+  crosshairCursor,
+} from '@codemirror/view';
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+  indentMore,
+  indentLess,
+  insertNewlineAndIndent,
+  deleteLine,
+  moveLineUp,
+  moveLineDown,
+  toggleComment,
+  duplicateLine,
+  undo,
+  redo,
+} from '@codemirror/commands';
+import {
+  foldGutter,
+  indentOnInput,
+  bracketMatching,
+  foldKeymap,
+  syntaxHighlighting,
+  defaultHighlightStyle,
+  StreamLanguage,
+} from '@codemirror/language';
+import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
+import {
+  autocompletion,
+  completionKeymap,
+  closeBrackets,
+  closeBracketsKeymap,
+} from '@codemirror/autocomplete';
+import { oneDark } from '@codemirror/theme-one-dark';
+
+// ─── State ───────────────────────────────────────────────────────────────────
+
+let isDirty = false;
+let currentPath = '';
+let currentLanguage = '';
+let loadedLanguage = null;
+
+// ─── Dynamic compartments ────────────────────────────────────────────────────
+
+const languageConf = new Compartment();
+const readOnlyConf = new Compartment();
+const fontSizeConf = new Compartment();
+
+// ─── Notify bridge ───────────────────────────────────────────────────────────
+
+function post(type, payload = {}) {
+  try {
+    const msg = JSON.stringify({ type, ...payload });
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(msg);
+    }
+  } catch (_) { /* ignore bridge errors */ }
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────────────
+
+let toastTimer = null;
+function showToast(text, ms = 1800) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// ─── Language detection from path ────────────────────────────────────────────
+
+function langFromPath(path) {
+  if (!path) return '';
+  const ext = path.split('.').pop().toLowerCase();
+  const map = {
+    js: 'javascript', mjs: 'javascript', cjs: 'javascript',
+    jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
+    py: 'python', pyw: 'python', pyi: 'python',
+    html: 'html', htm: 'html',
+    css: 'css', scss: 'css', less: 'css',
+    json: 'json', jsonc: 'json',
+    md: 'markdown', mdx: 'markdown', markdown: 'markdown',
+    c: 'cpp', cpp: 'cpp', cxx: 'cpp', cc: 'cpp', h: 'cpp', hpp: 'cpp', hxx: 'cpp',
+    go: 'go',
+    rs: 'rust',
+    php: 'php', phtml: 'php',
+    sql: 'sql',
+    yaml: 'yaml', yml: 'yaml',
+    xml: 'xml', svg: 'xml',
+    // Dockerfile / config
+    dockerfile: 'dockerfile',
+    conf: 'ini',
+    ini: 'ini',
+    toml: 'toml',
+    sh: 'shell', bash: 'shell', zsh: 'shell',
+    txt: 'text',
+  };
+  // Handle special filenames
+  const base = path.split('/').pop().toLowerCase();
+  if (base === 'dockerfile') return 'dockerfile';
+  if (base === 'makefile') return 'makefile';
+  if (base === '.env') return 'ini';
+  return map[ext] || '';
+}
+
+// ─── Language loader — lazy dynamic imports ──────────────────────────────────
+
+const langLoaders = {
+  javascript: () => import('@codemirror/lang-javascript').then(m => m.javascript()),
+  typescript: () => import('@codemirror/lang-javascript').then(m => m.javascript({ typescript: true })),
+  tsx: () => import('@codemirror/lang-javascript').then(m =>
+    m.javascript({ typescript: true, jsx: true })),
+  jsx: () => import('@codemirror/lang-javascript').then(m =>
+    m.javascript({ jsx: true })),
+  python: () => import('@codemirror/lang-python').then(m => m.python()),
+  html: () => import('@codemirror/lang-html').then(m => m.html()),
+  css: () => import('@codemirror/lang-css').then(m => m.css()),
+  json: () => import('@codemirror/lang-json').then(m => m.json()),
+  markdown: () => import('@codemirror/lang-markdown').then(m => m.markdown()),
+  cpp: () => import('@codemirror/lang-cpp').then(m => m.cpp()),
+  go: () => import('@codemirror/lang-go').then(m => m.go()),
+  rust: () => import('@codemirror/lang-rust').then(m => m.rust()),
+  php: () => import('@codemirror/lang-php').then(m => m.php()),
+  sql: () => import('@codemirror/lang-sql').then(m => m.sql()),
+  xml: () => import('@codemirror/lang-xml').then(m => m.xml()),
+  yaml: () => import('@codemirror/legacy-modes/mode/yaml')
+    .then(m => StreamLanguage.define(m.yaml)),
+  dockerfile: () => import('@codemirror/legacy-modes/mode/dockerfile')
+    .then(m => StreamLanguage.define(m.dockerFile)),
+  shell: () => import('@codemirror/legacy-modes/mode/shell')
+    .then(m => StreamLanguage.define(m.shell)),
+  ini: () => import('@codemirror/legacy-modes/mode/properties')
+    .then(m => StreamLanguage.define(m.properties)),
+  toml: () => import('@codemirror/legacy-modes/mode/toml')
+    .then(m => StreamLanguage.define(m.toml)),
+};
+
+// Map aliases
+langLoaders.yaml = langLoaders.yaml;
+langLoaders.yml = langLoaders.yaml;
+langLoaders.js = langLoaders.javascript;
+langLoaders.ts = langLoaders.typescript;
+langLoaders.py = langLoaders.python;
+langLoaders.md = langLoaders.markdown;
+langLoaders.c = langLoaders.cpp;
+langLoaders.rs = langLoaders.rust;
+langLoaders.properties = langLoaders.ini;
+langLoaders.sh = langLoaders.shell;
+langLoaders.bash = langLoaders.shell;
+langLoaders.zsh = langLoaders.shell;
+
+// Fallback: plain text (no highlighting)
+function textLanguage() {
+  // Return empty extension — plain text
+  return [];
+}
+
+async function loadLanguage(lang) {
+  if (!lang) return [];
+  const loader = langLoaders[lang.toLowerCase()];
+  if (!loader) return [];
+  try {
+    return await loader();
+  } catch (err) {
+    console.warn(`[PhoneIDE] Failed to load language "${lang}":`, err);
+    return [];
+  }
+}
+
+// ─── Go-to-line helper ──────────────────────────────────────────────────────
+
+function goToLineNumber(view, lineNum) {
+  if (!view || lineNum < 1) return false;
+  const doc = view.state.doc;
+  const line = doc.line(Math.min(lineNum, doc.lines));
+  view.dispatch({
+    selection: { anchor: line.from, head: line.from },
+    scrollIntoView: true,
+  });
+  return true;
+}
+
+// ─── Save helper ─────────────────────────────────────────────────────────────
+
+function saveContent() {
+  post('saveRequested', { content: editorView.state.doc.toString() });
+  showToast('Save requested');
+}
+
+// ─── Debounce utility ───────────────────────────────────────────────────────
+
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+// ─── Create editor ───────────────────────────────────────────────────────────
+
+const editorDiv = document.getElementById('editor');
+
+// Build static extensions
+const staticExtensions = [
+  // ── View ──
+  lineNumbers(),
+  highlightActiveLine(),
+  highlightActiveLineGutter(),
+  highlightSpecialChars(),
+  drawSelection(),
+  dropCursor(),
+  rectangularSelection(),
+  crosshairCursor(),
+  EditorView.lineWrapping,
+
+  // ── Editing ──
+  history(),
+  indentOnInput(),
+  bracketMatching(),
+  closeBrackets(),
+  autocompletion(),
+
+  // ── Folding ──
+  foldGutter({
+    markerDOM(open) {
+      const span = document.createElement('span');
+      span.textContent = open ? '▾' : '▸';
+      span.style.cssText = 'font-size:11px;line-height:1;';
+      return span;
+    },
+  }),
+
+  // ── Syntax ──
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+
+  // ── Search ──
+  search({ top: true }),
+
+  // ── Theme ──
+  oneDark,
+
+  // ── Custom theme overrides ──
+  EditorView.theme({
+    '&': {
+      backgroundColor: '#080b16',
+      color: '#abb2bf',
+      height: '100%',
+      fontSize: '14px',
+    },
+    '.cm-content': {
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
+      padding: '4px 0',
+      caretColor: '#528bff',
+    },
+    '.cm-cursor, .cm-dropCursor': {
+      borderLeftColor: '#528bff',
+    },
+    '.cm-gutters': {
+      backgroundColor: '#080b16',
+      color: '#4a5568',
+      border: 'none',
+      borderRight: '1px solid rgba(255,255,255,0.06)',
+    },
+    '.cm-activeLineGutter': {
+      backgroundColor: 'rgba(255,255,255,0.03)',
+      color: '#718096',
+    },
+    '.cm-activeLine': {
+      backgroundColor: 'rgba(255,255,255,0.025)',
+    },
+    '.cm-selectionBackground': {
+      backgroundColor: 'rgba(82,139,255,0.22) !important',
+    },
+    '.cm-matchingBracket': {
+      backgroundColor: 'rgba(82,139,255,0.18)',
+      outline: '1px solid rgba(82,139,255,0.35)',
+    },
+    '.cm-foldPlaceholder': {
+      backgroundColor: 'rgba(255,255,255,0.05)',
+      color: '#528bff',
+      border: '1px solid rgba(82,139,255,0.2)',
+      borderRadius: '3px',
+      padding: '0 6px',
+      margin: '0 2px',
+    },
+    '.cm-searchMatch': {
+      backgroundColor: 'rgba(255,200,50,0.2)',
+      outline: '1px solid rgba(255,200,50,0.4)',
+    },
+    '.cm-searchMatch.cm-searchMatch-selected': {
+      backgroundColor: 'rgba(255,140,0,0.35)',
+      outline: '1px solid rgba(255,140,0,0.6)',
+    },
+    '.cm-tooltip-autocomplete': {
+      backgroundColor: '#141829',
+      border: '1px solid rgba(255,255,255,0.1)',
+      borderRadius: '6px',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+      '& > ul > li': {
+        padding: '4px 8px',
+      },
+      '& > ul > li[aria-selected]': {
+        backgroundColor: 'rgba(82,139,255,0.2)',
+        color: '#e2e8f0',
+      },
+    },
+  }),
+
+  // ── Editor theme (font size compartment placeholder) ──
+  fontSizeConf.of(EditorView.theme({})),
+
+  // ── Keymaps ──
+  keymap.of([
+    // ── Save ──
+    {
+      key: 'Mod-s',
+      run: () => { saveContent(); return true; },
+      preventDefault: true,
+    },
+    // ── Duplicate line ──
+    {
+      key: 'Mod-d',
+      run: duplicateLine,
+      preventDefault: true,
+    },
+    // ── Insert blank line below (Ctrl+Enter) ──
+    {
+      key: 'Mod-Enter',
+      run: (view) => {
+        const changes = view.state.changeByRange((range) => {
+          const line = view.state.doc.lineAt(range.head);
+          const pos = Math.min(line.to + 1, view.state.doc.length);
+          return {
+            changes: { from: pos, insert: '\n' },
+            range: { anchor: pos + 1, head: pos + 1 },
+          };
+        });
+        view.dispatch(view.state.update(changes, {
+          userEvent: 'input',
+          scrollIntoView: true,
+        }));
+        return true;
+      },
+      preventDefault: true,
+    },
+    // ── Go to line ──
+    {
+      key: 'Mod-g',
+      run: (view) => {
+        const lineStr = prompt('Go to line:');
+        if (lineStr !== null) {
+          const num = parseInt(lineStr, 10);
+          if (!isNaN(num) && num > 0) {
+            goToLineNumber(view, num);
+          }
+        }
+        return true;
+      },
+      preventDefault: true,
+    },
+    // ── Delete line (fallback if not in default) ──
+    {
+      key: 'Shift-Mod-k',
+      run: deleteLine,
+      preventDefault: true,
+    },
+    // ── Move lines ──
+    { key: 'Alt-ArrowUp', run: moveLineUp, preventDefault: true },
+    { key: 'Alt-ArrowDown', run: moveLineDown, preventDefault: true },
+    // ── Toggle comment ──
+    { key: 'Mod-/', run: toggleComment, preventDefault: true },
+    // ── Spread built-in keymaps ──
+    ...defaultKeymap,
+    ...historyKeymap,
+    ...foldKeymap,
+    ...completionKeymap,
+    ...searchKeymap,
+    ...closeBracketsKeymap,
+    ...indentWithTab,
+  ]),
+
+  // ── Update listener ──
+  EditorView.updateListener.of((update) => {
+    // Selection changes
+    if (update.selectionSet) {
+      const sel = update.state.selection.main;
+      const text = update.state.sliceDoc(sel.from, sel.to);
+      const head = sel.head;
+      const line = update.state.doc.lineAt(head);
+      const col = head - line.from + 1;
+
+      post('selectionChanged', { text });
+      post('cursorChanged', { line: line.number, column: col });
+    }
+
+    // Document changes
+    if (update.docChanged) {
+      isDirty = true;
+      debouncedContentChange(update.state.doc.toString());
+    }
+  }),
+
+  // ── Dynamic compartments ──
+  languageConf.of([]),
+  readOnlyConf.of([]),
+];
+
+// Debounced content change notification
+const debouncedContentChange = debounce((content) => {
+  post('contentChanged', { content, dirty: isDirty });
+}, 150);
+
+// Create the editor view
+const editorView = new EditorView({
+  state: EditorState.create({
+    doc: '',
+    extensions: staticExtensions,
+  }),
+  parent: editorDiv,
+});
+
+// ─── PostMessage bridge ──────────────────────────────────────────────────────
+
+async function handleMessage(data) {
+  if (!data || typeof data !== 'object') return;
+
+  const { type } = data;
+
+  switch (type) {
+    // ── Set content ──
+    case 'setContent': {
+      const {
+        content = '',
+        language,
+        path,
+        readOnly = false,
+        fontSize,
+      } = data;
+
+      // Deep-dirty flag — don't mark as dirty on initial load
+      const wasInitial = !isDirty;
+
+      // Set language (from explicit or path)
+      let lang = language || '';
+      if (!lang && path) {
+        lang = langFromPath(path);
+        currentPath = path;
+      }
+      if (lang) currentLanguage = lang;
+
+      // Load language extension
+      const langExt = lang ? await loadLanguage(lang) : [];
+
+      // Build transaction
+      const effects = [
+        languageConf.reconfigure(langExt),
+        readOnlyConf.reconfigure(
+          readOnly ? EditorState.readOnly.of(true) : []
+        ),
+      ];
+
+      if (fontSize !== undefined && fontSize > 0) {
+        effects.push(
+          fontSizeConf.reconfigure(
+            EditorView.theme({
+              '&': { fontSize: fontSize + 'px' },
+              '.cm-content': { fontSize: fontSize + 'px' },
+            })
+          )
+        );
+      }
+
+      editorView.dispatch({
+        changes: {
+          from: 0,
+          to: editorView.state.doc.length,
+          insert: content,
+        },
+        effects,
+      });
+
+      if (wasInitial) {
+        isDirty = false;
+        post('contentChanged', { content, dirty: false });
+      }
+
+      break;
+    }
+
+    // ── Set language ──
+    case 'setLanguage': {
+      const { language } = data;
+      if (!language) break;
+      currentLanguage = language;
+      try {
+        const langExt = await loadLanguage(language);
+        editorView.dispatch({
+          effects: languageConf.reconfigure(langExt),
+        });
+      } catch (err) {
+        console.warn(`[PhoneIDE] Failed to set language "${language}":`, err);
+      }
+      break;
+    }
+
+    // ── Set font size ──
+    case 'setFontSize': {
+      const { fontSize } = data;
+      if (fontSize === undefined || fontSize <= 0) break;
+      editorView.dispatch({
+        effects: fontSizeConf.reconfigure(
+          EditorView.theme({
+            '&': { fontSize: fontSize + 'px' },
+            '.cm-content': { fontSize: fontSize + 'px' },
+          })
+        ),
+      });
+      break;
+    }
+
+    // ── Insert snippet ──
+    case 'insertSnippet': {
+      const { text } = data;
+      if (!text) break;
+      const sel = editorView.state.selection.main;
+      editorView.dispatch({
+        changes: { from: sel.from, to: sel.to, insert: text },
+        selection: { anchor: sel.from + text.length },
+      });
+      editorView.focus();
+      break;
+    }
+
+    // ── Undo ──
+    case 'undo':
+      triggerUndo(editorView);
+      break;
+
+    // ── Redo ──
+    case 'redo':
+      triggerRedo(editorView);
+      break;
+
+    // ── Save (triggered externally) ──
+    case 'save':
+      saveContent();
+      break;
+
+    // ── Find ──
+    case 'find': {
+      const { query } = data;
+      if (query !== undefined) {
+        // Open search panel with query
+        openSearchPanel(editorView);
+        // Need to wait a tick for panel to render, then set query
+        setTimeout(() => {
+          const input = editorView.dom.querySelector('.cm-textfield');
+          if (input) {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+              window.HTMLInputElement.prototype, 'value'
+            ).set;
+            nativeInputValueSetter.call(input, query);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }, 50);
+      }
+      break;
+    }
+
+    // ── Go to line ──
+    case 'goToLine': {
+      const { line } = data;
+      if (line !== undefined && line > 0) {
+        goToLineNumber(editorView, line);
+      }
+      break;
+    }
+
+    default:
+      // Unknown message type — ignore
+      break;
+  }
+}
+
+// ─── Undo/Redo helpers (use top-level imports) ───
+
+function triggerUndo(view) {
+  undo(view);
+}
+
+function triggerRedo(view) {
+  redo(view);
+}
+
+// ─── Listen for messages from React Native ──────────────────────────────────
+
+window.addEventListener('message', (event) => {
+  try {
+    const data = typeof event.data === 'string'
+      ? JSON.parse(event.data)
+      : event.data;
+    handleMessage(data);
+  } catch (_) { /* ignore parse errors */ }
+});
+
+// Also support document.addEventListener for some WebView implementations
+document.addEventListener('message', (event) => {
+  try {
+    const data = typeof event.data === 'string'
+      ? JSON.parse(event.data)
+      : event.data;
+    if (data && data.type) handleMessage(data);
+  } catch (_) { /* ignore */ }
+});
+
+// ─── Ready ───────────────────────────────────────────────────────────────────
+
+// Hide loading spinner
+setTimeout(() => {
+  const loading = document.getElementById('loading');
+  if (loading) loading.classList.add('hidden');
+}, 300);
+
+// Notify RN that editor is ready
+post('editorReady');
+editorView.focus();
+
+// ─── Expose for debugging ───────────────────────────────────────────────────
+
+window.__phoneIDE = {
+  view: editorView,
+  loadLanguage,
+  langFromPath,
+  goToLine: goToLineNumber,
+  getState: () => ({
+    dirty: isDirty,
+    path: currentPath,
+    language: currentLanguage,
+    content: editorView.state.doc.toString(),
+  }),
+};
+
+console.log('[PhoneIDE] Editor ready. Supported languages:', Object.keys(langLoaders));
+</script>
+</body>
+</html>
