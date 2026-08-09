@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-android:
+  build:
     name: Build Android ${{ inputs.build-type || 'debug' }}
     runs-on: ubuntu-latest
     steps:
@@ -34,31 +34,27 @@ jobs:
 
       - run: npm ci
 
-      # Debug: local Gradle (no JS bundled — needs Metro at runtime)
-      - name: Build debug APK
-        if: ${{ inputs.build-type == 'debug' || github.event_name == 'push' }}
-        run: |
-          npx expo prebuild --platform android --no-install
-          cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - name: Prebuild
+        run: npx expo prebuild --platform android --no-install
 
-      # Release: EAS Cloud (handles Expo SDK 57 JS bundling correctly)
+      # Debug: local Gradle (fast, but APK needs Metro at runtime)
+      - name: Build debug
+        if: ${{ inputs.build-type == 'debug' }}
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+
+      # Release: EAS Cloud (standalone APK, no Metro needed)
       - uses: expo/expo-github-action@v8
         if: ${{ inputs.build-type == 'release' }}
         with: { eas-version: latest, token: '${{ secrets.EXPO_TOKEN }}' }
 
-      - name: EAS release build
+      - name: Submit to EAS
         if: ${{ inputs.build-type == 'release' }}
-        run: |
-          eas build --platform android --profile production --non-interactive --wait
-          mkdir -p artifacts
-          find . -name "*.apk" -o -name "*.aab" | head -5 | xargs -I{} cp {} artifacts/ 2>/dev/null || true
+        run: eas build --platform android --profile production --non-interactive --no-wait
 
-      - name: Upload artifact
+      - name: Upload debug APK
+        if: ${{ inputs.build-type == 'debug' }}
         uses: actions/upload-artifact@v4
         with:
-          name: phone-ide-android-${{ inputs.build-type || 'debug' }}
-          path: |
-            android/app/build/outputs/apk/**/*.apk
-            artifacts/*.apk
-            artifacts/*.aab
+          name: phone-ide-android-debug
+          path: android/app/build/outputs/apk/**/*.apk
           retention-days: 30
