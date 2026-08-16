@@ -46,7 +46,9 @@ jobs:
         if: ${{ inputs.platform == 'android' || inputs.platform == 'all' }}
         run: |
           mkdir -p artifacts
-          eas build:download --platform android --non-interactive --output artifacts/app.apk
+          eas build:download --platform android --non-interactive
+          # The command downloads to the current directory; let's find and copy/move it to the artifacts directory
+          find . -name "*.apk" -o -name "*.aab" | head -2 | xargs -I {} cp {} artifacts/ 2>/dev/null || true
 
       - name: Upload Android artifact
         if: ${{ inputs.platform == 'android' || inputs.platform == 'all' }}
