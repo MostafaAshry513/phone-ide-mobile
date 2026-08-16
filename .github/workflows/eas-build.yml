@@ -46,7 +46,9 @@ jobs:
         if: ${{ inputs.platform == 'android' || inputs.platform == 'all' }}
         run: |
           mkdir -p artifacts
-          eas build:download --platform android --non-interactive
+          BUILD_ID=$(eas build:list --platform=android --limit=1 --json --non-interactive | jq -r '.[0].id')
+          echo "Found build ID: $BUILD_ID"
+          eas build:download --build-id="$BUILD_ID" --non-interactive
           # The command downloads to the current directory; let's find and copy/move it to the artifacts directory
           find . -name "*.apk" -o -name "*.aab" | head -2 | xargs -I {} cp {} artifacts/ 2>/dev/null || true
 
