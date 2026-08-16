@@ -45,9 +45,8 @@ jobs:
       - name: Download Android artifact
         if: ${{ inputs.platform == 'android' || inputs.platform == 'all' }}
         run: |
-          # EAS auto-downloads; copy to artifacts directory
           mkdir -p artifacts
-          find . -name "*.apk" -o -name "*.aab" | head -20 | xargs -I {} cp {} artifacts/ 2>/dev/null || true
+          eas build:download --platform android --non-interactive --output artifacts/app.apk
 
       - name: Upload Android artifact
         if: ${{ inputs.platform == 'android' || inputs.platform == 'all' }}
