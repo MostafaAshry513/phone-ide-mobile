@@ -26,7 +26,10 @@
       "softwareKeyboardLayoutMode": "pan",
       "allowBackup": true
     },
-    "plugins": [],
+    "plugins": [
+      "expo-sharing",
+      "expo-splash-screen"
+    ],
     "extra": {
       "eas": {
         "projectId": "006c381e-fe96-4af6-8376-50ee61a1a13c"
