@@ -5,6 +5,7 @@
 import { useEffect, useCallback, useState } from 'react';
 import { View, StyleSheet, StatusBar, Platform } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { THEME, useAppState, useStore } from './lib/store';
 import * as FS from './lib/filesystem';
 import { DEFAULT_SHORTCUTS } from './lib/keyboard';
@@ -103,46 +104,48 @@ export default function App() {
   const showEditor = activePanel === 'editor' || !terminalVisible;
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <StatusBar barStyle="light-content" backgroundColor={THEME.deep} />
-        <View style={styles.root}>
-          <TopBar />
-          <FileTabs />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <StatusBar barStyle="light-content" backgroundColor={THEME.deep} />
+          <View style={styles.root}>
+            <TopBar />
+            <FileTabs />
 
-          <View style={styles.main}>
-            <FileExplorer />
-            <View style={styles.content}>
-              <View style={[styles.editorWrap, showEditor && styles.visible]}>
-                <Editor
-                  content={editorContent}
-                  fileName={editorFileName}
-                  fontSize={settings.fontSize}
-                  onContentChange={handleContentChange}
-                  onSave={handleSave}
-                />
-              </View>
-              <View style={[styles.terminalWrap, terminalVisible && styles.visible]}>
-                <Terminal visible={terminalVisible} onClose={toggleTerminal} />
-              </View>
+            <View style={styles.main}>
+              <FileExplorer />
+              <View style={styles.content}>
+                <View style={[styles.editorWrap, showEditor && styles.visible]}>
+                  <Editor
+                    content={editorContent}
+                    fileName={editorFileName}
+                    fontSize={settings.fontSize}
+                    onContentChange={handleContentChange}
+                    onSave={handleSave}
+                  />
+                </View>
+                <View style={[styles.terminalWrap, terminalVisible && styles.visible]}>
+                  <Terminal visible={terminalVisible} onClose={toggleTerminal} />
+                </View>
 
-              {/* Overlay panels */}
-              <SearchPanel visible={searchPanelOpen} onClose={toggleSearchPanel} />
-              <GitPanel visible={gitPanelOpen} onClose={toggleGitPanel} projectRoot="" />
-              <ProblemsPanel visible={problemsPanelOpen} onClose={toggleProblemsPanel} />
+                {/* Overlay panels */}
+                <SearchPanel visible={searchPanelOpen} onClose={toggleSearchPanel} />
+                <GitPanel visible={gitPanelOpen} onClose={toggleGitPanel} projectRoot="" />
+                <ProblemsPanel visible={problemsPanelOpen} onClose={toggleProblemsPanel} />
+              </View>
             </View>
+
+            <BottomBar />
+            <KeyboardBar visible />
+
+            {/* Modal panels */}
+            <CommandPalette visible={commandPaletteOpen} onClose={toggleCommandPalette} />
+            <SnippetsPanel visible={false} onClose={() => {}} />
+            <SymbolPanel visible={false} onClose={() => {}} />
           </View>
-
-          <BottomBar />
-          <KeyboardBar visible />
-
-          {/* Modal panels */}
-          <CommandPalette visible={commandPaletteOpen} onClose={toggleCommandPalette} />
-          <SnippetsPanel visible={false} onClose={() => {}} />
-          <SymbolPanel visible={false} onClose={() => {}} />
-        </View>
-      </SafeAreaView>
-    </SafeAreaProvider>
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
